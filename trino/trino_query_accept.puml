@@ -1,0 +1,66 @@
+@startuml
+title 调用/v1/statement 提交查询
+autonumber
+Client -> QueuedStatementResource: postStatement()
+QueuedStatementResource -> QueuedStatementResource.Query: new Query()
+QueuedStatementResource -> QueuedStatementResource.Query: getQueryResults()
+QueuedStatementResource.Query -> QueuedStatementResource.Query: createQueryResults()
+
+QueuedStatementResource.Query -> QueuedStatementResource.Query: getNextUri(dispatchInfo)
+autonumber stop
+alt 已经创建DispatchQuery
+  return /v1/statement/executing URI
+else 没有创建DispatchQuery
+  return /v1/statement/queued URI
+end
+
+autonumber resume
+QueuedStatementResource.Query --> QueuedStatementResource: QueryResults
+QueuedStatementResource --> Client: QueryResults
+@enduml
+
+@startuml
+title 调用/v1/statement/queued 获取查询状态
+autonumber
+Client -> QueuedStatementResource: getStatus()
+QueuedStatementResource -> QueuedStatementResource.Query: waitForDispatched()
+QueuedStatementResource.Query -> DispatchManager: createQuery(queryId, slug, \n sessionContext, query)
+DispatchManager -> DispatchManager: createQueryInternal(queryId, slug,\n sessionContext, query,\n resourceGroupManager)
+DispatchManager -> QueryPreparer: prepareQuery(session, query)
+QueryPreparer -> SqlParser: createStatement(query, createParsingOptions(session))
+return statement[Statement实现类]
+DispatchManager <-- QueryPreparer : preparedQuery[QueryPreparer.PreparedQuery]
+DispatchManager -> ResourceGroupManager: selectGroup()
+DispatchManager <-- ResourceGroupManager: SelectionContext
+DispatchManager -> DispatchQueryFactory: createDispatchQuery()
+DispatchQueryFactory -> QueryExecutionFactory: createQueryExecution()
+return queryExecutionFuture
+note right of DispatchQueryFactory
+queryExecutionFuture作为
+LocalDispatchQuery的构造参数传入
+end note
+DispatchManager <-- DispatchQueryFactory: dispatchQuery[LocalDispatchQuery]
+DispatchManager -> QueryTracker: addQuery(dispatchQuery)
+QueryTracker --> DispatchManager: queries.putIfAbsent(dispatchQuery.getQueryId(), dispatchQuery) == null
+alt 返回true && !dispatchQuery.isDone()
+DispatchManager -> ResourceGroupManager: submit(dispatchQuery, selectionContext, dispatchExecutor)
+end
+@enduml
+
+@startuml
+title 调用/v1/statement/executing 获取查询结果
+autonumber
+Client -> ExecutingStatementResource: getQueryResults()
+ExecutingStatementResource -> Query: waitForResults()
+Query -> Query: cachedResult = getCachedResult(token)
+alt cachedResult.isPresent()
+  Query --> ExecutingStatementResource: cachedResult
+else cachedResult为空
+  Query -> Query: getNextResult()
+  Query -> SqlQueryManager: getFullQueryInfo(queryId)
+  Query <-- SqlQueryManager: queryInfo
+  Query -> Query: resultRows = removePagesFromExchange(queryInfo)
+  Query -> DirectExchangeClient: pollPage()
+  Query --> ExecutingStatementResource: queryResults
+end
+@enduml

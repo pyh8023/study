@@ -1,0 +1,52 @@
+@startuml
+autonumber
+title 语义分析
+SqlQueryExecution.SqlQueryExecutionFactory -> SqlQueryExecution : new SqlQueryExecution()
+SqlQueryExecution -> Analyzer : analyze(preparedQuery.getStatement())
+note right of SqlQueryExecution
+  preparedQuery是调用/v1/statement/queued
+  获取查询状态过程中创建
+end note
+Analyzer -> StatementRewrite : rewrite(analyzerFactory, \nsession, statement, parameters,\n parameterLookup, warningCollector)
+note right of Analyzer
+  依次调用StatementRewrite.Rewrite
+  实现类的rewrite()方法
+  实现类包括：
+  DescribeInputRewrite
+  DescribeOutputRewrite
+  ShowQueriesRewrite
+  ShowStatsRewrite
+  ExplainRewrite
+end note
+StatementRewrite --> Analyzer : rewrittenStatement[Statement]
+
+Analyzer -> StatementAnalyzer : analyze(rewrittenStatement, Optional.empty())
+StatementAnalyzer -> Statement实现类 : accept()
+return scope[Scope]
+StatementAnalyzer -> StatementAnalyzer : 检查每个column的访问权限
+Analyzer --> SqlQueryExecution : analysis[Analysis]
+@enduml
+
+
+@startuml
+autonumber
+title 生成分布式查询计划
+SqlQueryManager -> SqlQueryExecution : start()
+note right of SqlQueryManager
+  查询执行步骤一第8步调用
+end note
+SqlQueryExecution -> SqlQueryExecution : PlanRoot plan = planQuery()
+SqlQueryExecution -> LogicalPlanner : plan(analysis)
+LogicalPlanner -> LogicalPlanner : planStatement(analysis, analysis.getStatement())
+LogicalPlanner -> PlanOptimizer : optimize()
+note right of LogicalPlanner
+  依次调用优化器的optimize()方法
+end note
+SqlQueryExecution <-- LogicalPlanner : plan[Plan]
+SqlQueryExecution -> PlanFragmenter : createSubPlans(plan) 分段
+return fragmentedPlan[SubPlan]
+SqlQueryExecution -> SqlQueryExecution : planDistribution(plan)\n创建SqlQueryScheduler
+SqlQueryExecution -> SqlQueryScheduler : new SqlQueryScheduler()
+SqlQueryExecution -> SqlQueryScheduler : start()
+@enduml
+

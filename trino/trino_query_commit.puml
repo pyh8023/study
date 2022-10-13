@@ -1,0 +1,26 @@
+@startuml
+
+==调用/v1/statement 提交查询==
+participant DirectExchangeClient
+participant SqlQueryManager
+participant io.trino.server.protocol.Query as Query
+participant ExecutingStatementResource
+autonumber
+Client -> QueuedStatementResource: postStatement()
+QueuedStatementResource -> QueuedStatementResource.Query: new Query()
+QueuedStatementResource -> QueuedStatementResource.Query: getQueryResults()
+QueuedStatementResource.Query -> QueuedStatementResource.Query: createQueryResults()
+
+QueuedStatementResource.Query -> QueuedStatementResource.Query: getNextUri(dispatchInfo)
+autonumber stop
+alt 已经创建DispatchQuery
+  return /v1/statement/executing URI
+else
+  return /v1/statement/queued URI
+end
+
+autonumber resume
+QueuedStatementResource.Query --> QueuedStatementResource: QueryResults
+QueuedStatementResource --> Client: QueryResults
+
+@enduml

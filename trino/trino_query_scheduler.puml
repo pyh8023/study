@@ -1,0 +1,125 @@
+@startuml
+title SqlQueryScheduler构造方法执行
+autonumber
+ -> SqlQueryScheduler: new()
+participant SqlQueryScheduler.StageManager as StageManager
+SqlQueryScheduler -> StageManager: create()
+
+group 遍历执行计划分段SubPlan，每个分段执行下面内容
+    StageManager -> SqlStage : createSqlStage()
+    SqlStage -> SqlStage : initialize()
+    StageManager <-- SqlStage : sqlStage
+    StageManager -> StageManager : stages.put(stageId, stage)
+
+    alt stage是Coordinator_only类型
+        StageManager -> StageManager : coordinatorStagesInTopologicalOrder.add(stage)
+    else
+        StageManager -> StageManager : distributedStagesInTopologicalOrder.add(stage)
+    end
+end
+
+StageManager -> StageManager : new StageManager()
+note right of StageManager
+    构造参数
+    queryStateMachine
+    stages.buildOrThrow()
+    coordinatorStagesInTopologicalOrder.build(),
+    distributedStagesInTopologicalOrder.build(),
+    rootStageId,
+    children.buildOrThrow(),
+    parents.buildOrThrow()
+end note
+StageManager -> StageManager : initialize()
+StageManager --> SqlQueryScheduler : stageManager[StageManager]
+
+participant SqlQueryScheduler.CoordinatorStagesScheduler as CoordinatorStagesScheduler
+SqlQueryScheduler -> CoordinatorStagesScheduler : create()
+CoordinatorStagesScheduler -> PipelinedStageExecution : createPipelinedStageExecution()
+note right of CoordinatorStagesScheduler
+    遍历StageManager中的coordinatorStagesInTopologicalOrder,
+    每个SqlStage创建一个PipelinedStageExecution
+end note
+PipelinedStageExecution -> PipelinedStageExecution : initialize()
+CoordinatorStagesScheduler <-- PipelinedStageExecution : stageExecution
+CoordinatorStagesScheduler -> CoordinatorStagesScheduler : initialize()
+
+CoordinatorStagesScheduler --> SqlQueryScheduler :  coordinatorStagesScheduler
+@enduml
+
+@startuml
+title 查询调度执行
+autonumber
+ -> SqlQueryScheduler : start()
+participant SqlQueryScheduler.CoordinatorStagesScheduler as CoordinatorStagesScheduler
+participant SqlQueryScheduler.FaultTolerantDistributedStagesScheduler as FaultTolerantDistributedStagesScheduler
+participant SqlQueryScheduler.PipelinedDistributedStagesScheduler as PipelinedDistributedStagesScheduler
+SqlQueryScheduler -> SqlQueryScheduler : createDistributedStagesScheduler()
+
+alt 重试策略retryPolicy为Task
+    SqlQueryScheduler -> FaultTolerantDistributedStagesScheduler : create()
+    group  遍历StageManager中的distributedStagesInTopologicalOrder\n 每个SqlStage执行下面内容
+        FaultTolerantDistributedStagesScheduler -> FaultTolerantDistributedStagesScheduler : exchangeManager.createExchange()
+        FaultTolerantDistributedStagesScheduler -> FaultTolerantDistributedStagesScheduler : new FaultTolerantStageScheduler()
+    end
+    SqlQueryScheduler <-- FaultTolerantDistributedStagesScheduler : distributedStagesScheduler
+else 重试策略retryPolicy为QUERY或者NONE
+    SqlQueryScheduler -> PipelinedDistributedStagesScheduler : distributedStagesScheduler = create()
+    PipelinedDistributedStagesScheduler -> PipelinedStageExecution : createPipelinedStageExecution()
+    note right of PipelinedDistributedStagesScheduler
+        遍历StageManager中的distributedStagesInTopologicalOrder,
+        每个SqlStage创建一个PipelinedStageExecution
+    end note
+
+    group 遍历所有PipelinedStageExecution，每个StageExecution创建一个StageScheduler
+        PipelinedDistributedStagesScheduler -> PipelinedDistributedStagesScheduler : createStageScheduler()
+        autonumber 9.1
+        PipelinedDistributedStagesScheduler -> SplitSourceFactory : createSplitSources()
+        return splitSources
+        alt partitioningHandle.equals(SOURCE_DISTRIBUTION)
+            PipelinedDistributedStagesScheduler -> SourcePartitionedScheduler : newSourcePartitionedSchedulerAsStageScheduler()
+            SourcePartitionedScheduler -> SourcePartitionedScheduler : sourcePartitionedScheduler = new SourcePartitionedScheduler()
+            SourcePartitionedScheduler --> PipelinedDistributedStagesScheduler :  StageScheduler的匿名实现类
+            note right of PipelinedDistributedStagesScheduler
+                StageScheduler匿名实现类的start()调用sourcePartitionedScheduler的start()
+                StageScheduler匿名实现类的schedule()调用sourcePartitionedScheduler的schedule()
+            end note
+        else partitioningHandle.equals(SCALED_WRITER_DISTRIBUTION)
+            PipelinedDistributedStagesScheduler --> PipelinedDistributedStagesScheduler :  new ScaledWriterScheduler()
+        else splitSources不为空
+            PipelinedDistributedStagesScheduler --> PipelinedDistributedStagesScheduler : new FixedSourcePartitionedScheduler()
+        else
+            PipelinedDistributedStagesScheduler --> PipelinedDistributedStagesScheduler :  new FixedCountScheduler()
+        end
+    end
+
+    autonumber 10
+    PipelinedDistributedStagesScheduler -> PipelinedDistributedStagesScheduler : distributedStagesScheduler = new PipelinedDistributedStagesScheduler()
+    PipelinedDistributedStagesScheduler -> PipelinedDistributedStagesScheduler : initialize()
+    SqlQueryScheduler <-- PipelinedDistributedStagesScheduler : distributedStagesScheduler
+end
+
+SqlQueryScheduler -> SqlQueryScheduler : distributedStagesScheduler.addStateChangeListener()
+
+alt 如果重试策略retryPolicy为QUERY && \n 重试次数小于最大重试次数 &&  errorCode为可重试错误码
+    SqlQueryScheduler -> SqlQueryScheduler : scheduleRetryWithDelay(delayInMillis)
+    SqlQueryScheduler -> SqlQueryScheduler : createDistributedStagesScheduler()
+    SqlQueryScheduler -> SqlQueryScheduler : distributedStagesScheduler.schedule()
+end
+
+SqlQueryScheduler -> CoordinatorStagesScheduler : schedule()
+SqlQueryScheduler -> SqlQueryScheduler : distributedStagesScheduler.schedule()
+note right of SqlQueryScheduler
+    DistributedStagesScheduler有
+    FaultTolerantDistributedStagesScheduler
+    和PipelinedDistributedStagesScheduler
+    两个实现类
+end note
+@enduml
+
+
+@startuml
+title CoordinatorStagesScheduler调度执行
+
+@enduml
+
+

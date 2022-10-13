@@ -1,0 +1,26 @@
+@startuml
+title 查询执行步骤一 ：获取查询执行资格
+autonumber
+DispatchManager -> InternalResourceGroupManager: submit(dispatchQuery, selectionContext, dispatchExecutor)
+InternalResourceGroupManager -> InternalResourceGroupManager : createGroupIfNecessary(\nselectionContext, executor);
+InternalResourceGroupManager -> InternalResourceGroup: run(dispatchQuery)
+
+alt ResourceGroup的cpu、内存资源足够，并且没有达到并发量限制
+ InternalResourceGroup -> InternalResourceGroup : startInBackground(dispatchQuery)
+ InternalResourceGroup -> LocalDispatchQuery: startWaitingForResources()
+ note right of InternalResourceGroup
+   等待worker节点数量达到执行最小数量
+ end note
+ LocalDispatchQuery -> LocalDispatchQuery : startExecution(queryExecution)
+ LocalDispatchQuery -> SqlQueryManager: createQuery(queryExecution)
+ SqlQueryManager -> QueryExecution : start()
+else 资源不足
+  InternalResourceGroup -> InternalResourceGroup : enqueueQuery(dispatchQuery)
+  InternalResourceGroup -> InternalResourceGroup : queuedQueries.addOrUpdate(query,\n getQueryPriority(query.getSession()))
+  note right of InternalResourceGroup
+    InternalResourceGroupManager每隔100ms，检查group
+    能否运行查询，能的话就遍历queuedQueries,执行第4步
+  end note
+end
+@enduml
+
