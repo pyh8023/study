@@ -55,57 +55,59 @@ participant SqlQueryScheduler.FaultTolerantDistributedStagesScheduler as FaultTo
 participant SqlQueryScheduler.PipelinedDistributedStagesScheduler as PipelinedDistributedStagesScheduler
 SqlQueryScheduler -> SqlQueryScheduler : createDistributedStagesScheduler()
 
+autonumber 2.1
 alt 重试策略retryPolicy为Task
     SqlQueryScheduler -> FaultTolerantDistributedStagesScheduler : create()
     group  遍历StageManager中的distributedStagesInTopologicalOrder\n 每个SqlStage执行下面内容
         FaultTolerantDistributedStagesScheduler -> FaultTolerantDistributedStagesScheduler : exchangeManager.createExchange()
         FaultTolerantDistributedStagesScheduler -> FaultTolerantDistributedStagesScheduler : new FaultTolerantStageScheduler()
     end
-    SqlQueryScheduler <-- FaultTolerantDistributedStagesScheduler : distributedStagesScheduler
+    SqlQueryScheduler <-- FaultTolerantDistributedStagesScheduler : distributedStagesScheduler[FaultTolerantDistributedStagesScheduler]
 else 重试策略retryPolicy为QUERY或者NONE
     SqlQueryScheduler -> PipelinedDistributedStagesScheduler : distributedStagesScheduler = create()
-    PipelinedDistributedStagesScheduler -> PipelinedStageExecution : createPipelinedStageExecution()
-    note right of PipelinedDistributedStagesScheduler
-        遍历StageManager中的distributedStagesInTopologicalOrder,
-        每个SqlStage创建一个PipelinedStageExecution
-    end note
+    group 遍历StageManager中的distributedStagesInTopologicalOrder\n每个SqlStage创建一个PipelinedStageExecution
+        PipelinedDistributedStagesScheduler -> PipelinedStageExecution : createPipelinedStageExecution()
+        PipelinedDistributedStagesScheduler <-- PipelinedStageExecution : stageExecution[PipelinedStageExecution]
+    end
 
     group 遍历所有PipelinedStageExecution，每个StageExecution创建一个StageScheduler
         PipelinedDistributedStagesScheduler -> PipelinedDistributedStagesScheduler : createStageScheduler()
-        autonumber 9.1
+        autonumber 2.8.1
         PipelinedDistributedStagesScheduler -> SplitSourceFactory : createSplitSources()
-        return splitSources
+        return splitSources[Map<PlanNodeId, SplitSource>]
         alt partitioningHandle.equals(SOURCE_DISTRIBUTION)
             PipelinedDistributedStagesScheduler -> SourcePartitionedScheduler : newSourcePartitionedSchedulerAsStageScheduler()
-            SourcePartitionedScheduler -> SourcePartitionedScheduler : sourcePartitionedScheduler = new SourcePartitionedScheduler()
-            SourcePartitionedScheduler --> PipelinedDistributedStagesScheduler :  StageScheduler的匿名实现类
+            SourcePartitionedScheduler -> SourcePartitionedScheduler : sourcePartitionedScheduler  =  \n new SourcePartitionedScheduler()
+            SourcePartitionedScheduler --> PipelinedDistributedStagesScheduler :  scheduler[StageScheduler的匿名实现类]
             note right of PipelinedDistributedStagesScheduler
                 StageScheduler匿名实现类的start()调用sourcePartitionedScheduler的start()
                 StageScheduler匿名实现类的schedule()调用sourcePartitionedScheduler的schedule()
             end note
         else partitioningHandle.equals(SCALED_WRITER_DISTRIBUTION)
-            PipelinedDistributedStagesScheduler --> PipelinedDistributedStagesScheduler :  new ScaledWriterScheduler()
+            PipelinedDistributedStagesScheduler --> PipelinedDistributedStagesScheduler :  scheduler[ScaledWriterScheduler]
         else splitSources不为空
-            PipelinedDistributedStagesScheduler --> PipelinedDistributedStagesScheduler : new FixedSourcePartitionedScheduler()
+            PipelinedDistributedStagesScheduler --> PipelinedDistributedStagesScheduler : scheduler[FixedSourcePartitionedScheduler]
         else
-            PipelinedDistributedStagesScheduler --> PipelinedDistributedStagesScheduler :  new FixedCountScheduler()
+            PipelinedDistributedStagesScheduler --> PipelinedDistributedStagesScheduler :  scheduler[FixedCountScheduler]
         end
     end
 
-    autonumber 10
-    PipelinedDistributedStagesScheduler -> PipelinedDistributedStagesScheduler : distributedStagesScheduler = new PipelinedDistributedStagesScheduler()
+    autonumber 2.9
+    PipelinedDistributedStagesScheduler -> PipelinedDistributedStagesScheduler : distributedStagesScheduler = \n new PipelinedDistributedStagesScheduler()
     PipelinedDistributedStagesScheduler -> PipelinedDistributedStagesScheduler : initialize()
-    SqlQueryScheduler <-- PipelinedDistributedStagesScheduler : distributedStagesScheduler
+    SqlQueryScheduler <-- PipelinedDistributedStagesScheduler : distributedStagesScheduler[PipelinedDistributedStagesScheduler]
 end
 
-SqlQueryScheduler -> SqlQueryScheduler : distributedStagesScheduler.addStateChangeListener()
 
-alt 如果重试策略retryPolicy为QUERY && \n 重试次数小于最大重试次数 &&  errorCode为可重试错误码
+SqlQueryScheduler -> SqlQueryScheduler : distributedStagesScheduler.addStateChangeListener()
+autonumber 2.12.1
+alt 如果重试策略retryPolicy为QUERY  \n &&  重试次数小于最大重试次数 \n &&  errorCode为可重试错误码
     SqlQueryScheduler -> SqlQueryScheduler : scheduleRetryWithDelay(delayInMillis)
     SqlQueryScheduler -> SqlQueryScheduler : createDistributedStagesScheduler()
     SqlQueryScheduler -> SqlQueryScheduler : distributedStagesScheduler.schedule()
 end
 
+autonumber 3
 SqlQueryScheduler -> CoordinatorStagesScheduler : schedule()
 SqlQueryScheduler -> SqlQueryScheduler : distributedStagesScheduler.schedule()
 note right of SqlQueryScheduler
