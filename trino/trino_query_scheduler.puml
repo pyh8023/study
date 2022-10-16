@@ -56,11 +56,11 @@ participant SqlQueryScheduler.PipelinedDistributedStagesScheduler as PipelinedDi
 SqlQueryScheduler -> SqlQueryScheduler : createDistributedStagesScheduler()
 
 autonumber 2.1
-alt 重试策略retryPolicy为Task
+alt 重试策略retryPolicy为Task，retryPolicy从systemSession中获取
     SqlQueryScheduler -> FaultTolerantDistributedStagesScheduler : create()
     group  遍历StageManager中的distributedStagesInTopologicalOrder\n 每个SqlStage执行下面内容
-        FaultTolerantDistributedStagesScheduler -> FaultTolerantDistributedStagesScheduler : exchangeManager.createExchange()
-        FaultTolerantDistributedStagesScheduler -> FaultTolerantDistributedStagesScheduler : new FaultTolerantStageScheduler()
+        FaultTolerantDistributedStagesScheduler -> FaultTolerantDistributedStagesScheduler : exchange = exchangeManager.createExchange()
+        FaultTolerantDistributedStagesScheduler -> FaultTolerantDistributedStagesScheduler : new FaultTolerantStageScheduler(exchange)
     end
     SqlQueryScheduler <-- FaultTolerantDistributedStagesScheduler : distributedStagesScheduler[FaultTolerantDistributedStagesScheduler]
 else 重试策略retryPolicy为QUERY或者NONE
@@ -109,6 +109,17 @@ end
 
 autonumber 3
 SqlQueryScheduler -> CoordinatorStagesScheduler : schedule()
+autonumber 3.1
+CoordinatorStagesScheduler -> NodeScheduler : createNodeSelector()
+NodeScheduler -> NodeScheduler : selectCurrentNode()
+NodeScheduler --> CoordinatorStagesScheduler : coordinator[InternalNode]
+ group 遍历所有PipelinedStageExecution，每个StageExecution创建一个RemoteTask
+     CoordinatorStagesScheduler -> PipelinedStageExecution : stageExecution.scheduleTask(coordinator)
+     CoordinatorStagesScheduler <-- PipelinedStageExecution : task[RemoteTask]
+     CoordinatorStagesScheduler -> PipelinedStageExecution : schedulingComplete()
+     CoordinatorStagesScheduler -> SqlTaskManager : addSourceTaskFailureListener(task.getTaskId(), failureReporter)
+ end
+ autonumber 4
 SqlQueryScheduler -> SqlQueryScheduler : distributedStagesScheduler.schedule()
 note right of SqlQueryScheduler
     DistributedStagesScheduler有
@@ -120,8 +131,30 @@ end note
 
 
 @startuml
-title CoordinatorStagesScheduler调度执行
+title FaultTolerantDistributedStagesScheduler调度执行
+autonumber
+participant SqlQueryScheduler.FaultTolerantDistributedStagesScheduler as FaultTolerantDistributedStagesScheduler
+-> FaultTolerantDistributedStagesScheduler : schedule()
+group 遍历未完成的FaultTolerantStageScheduler，每个FaultTolerantStageScheduler执行下面内容
+    FaultTolerantDistributedStagesScheduler ->  FaultTolerantStageScheduler : isBlocked()
+    return blocked[ListenableFuture<Void>]
+    alt !blocked.isDone()
+        FaultTolerantDistributedStagesScheduler -> FaultTolerantDistributedStagesScheduler : blockedStages.add(blocked)
+    else
+        FaultTolerantDistributedStagesScheduler ->  FaultTolerantStageScheduler : schedule()
 
+        FaultTolerantDistributedStagesScheduler ->  FaultTolerantStageScheduler : isBlocked()
+        return blocked[ListenableFuture<Void>]
+        alt !blocked.isDone()
+            FaultTolerantDistributedStagesScheduler -> FaultTolerantDistributedStagesScheduler : blockedStages.add(blocked)
+        else
+            FaultTolerantDistributedStagesScheduler -> FaultTolerantDistributedStagesScheduler : atLeastOneStageIsNotBlocked = true
+        end
+    end
+end
+alt atLeastOneStageIsNotBlocked == false
+    FaultTolerantDistributedStagesScheduler -> FaultTolerantDistributedStagesScheduler : tryGetFutureValue(whenAnyComplete(blockedStages), 1, SECONDS)
+end
 @enduml
 
 
