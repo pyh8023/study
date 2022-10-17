@@ -142,7 +142,18 @@ group 遍历未完成的FaultTolerantStageScheduler，每个FaultTolerantStageSc
         FaultTolerantDistributedStagesScheduler -> FaultTolerantDistributedStagesScheduler : blockedStages.add(blocked)
     else
         FaultTolerantDistributedStagesScheduler ->  FaultTolerantStageScheduler : schedule()
-
+        alt sourceExchanges获取数据结束，并且taskSource为空
+            FaultTolerantStageScheduler -> FaultTolerantStageScheduler : 从sourceExchanges中获取数据赋值给exchangeSources
+            FaultTolerantStageScheduler -> StageTaskSourceFactory : create()
+            alt partitioningHandle.equals(SINGLE_DISTRIBUTION)
+                FaultTolerantStageScheduler <-- StageTaskSourceFactory : taskSource[SingleDistributionTaskSource]
+            else partitioning.equals(FIXED_ARBITRARY_DISTRIBUTION) || partitioning.equals(SCALED_WRITER_DISTRIBUTION)
+                FaultTolerantStageScheduler <-- StageTaskSourceFactory : taskSource[ArbitraryDistributionTaskSource]
+            else partitioningHandle.equals(FIXED_HASH_DISTRIBUTION)  || partitioningHandle.getConnectorId().isPresent()
+                FaultTolerantStageScheduler <-- StageTaskSourceFactory : taskSource[HashDistributionTaskSource]
+            else partitioning.equals(SOURCE_DISTRIBUTION)
+                FaultTolerantStageScheduler <-- StageTaskSourceFactory : taskSource[SourceDistributionTaskSource]
+        end
         FaultTolerantDistributedStagesScheduler ->  FaultTolerantStageScheduler : isBlocked()
         return blocked[ListenableFuture<Void>]
         alt !blocked.isDone()
