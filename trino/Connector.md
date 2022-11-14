@@ -6,7 +6,7 @@
 
 Trino 提供了服务提供者接口(service provider interface，SPI)——一种用于实现连接器 的 API。
 
-## SPI
+## Plugin
 
 实现Trino连接器，需要实现plugin接口，并实现其中的接口，plugin接口中定义了下面方法：
 
@@ -34,7 +34,7 @@ ConnectorFactory的create()中的config参数包括catalog配置文件中的所�
 
 ## ConnectorMetadata
 
-通过ConnectorMetadata接口能获取到schema, table, column列表，以及数据源所特有的元数据信息。
+ConnectorMetadata提供了对数据源元数据的管理和各种操作，比如列举schema, table, column信息，创建表，添加分区。
 
 一个只读的Connector需要实现下面方法：
 
@@ -68,7 +68,7 @@ split管理器将表中的数据分成一个个块，然后将这些块分发给
 
 ## ConnectorRecordSetProvider
 
-通过ConnectorRecordSetProvider获取数据，传输给Trino执行引擎。
+通过ConnectorRecordSetProvider获取split的数据，传输给Trino执行引擎。
 
 获取是需要传入ConnectorTableHandle，它是ConnectorMetadata生成查询计划和优化期间创建的一个虚拟表，是对表数据进行某些操作而派生的虚拟表，比如filter，limit等操作。
 
@@ -115,3 +115,101 @@ RecordCursor.getType(int field)返回field的数据类型。
 如果要修改数据就需要实现ConnectorPageSinkProvider，它会从Trino执行引擎中消费数据，创建ConnectorPageSink对象。
 
 ![image-20221029221546175](./images/image-20221029221546175.png)
+
+
+
+# Trino注册Plugin
+
+Trino启动时读取部署的plugin目录，构造类加载器，调用PluginManager.loadPlugins()注册plugin。
+
+```java
+injector.getInstance(PluginManager.class).loadPlugins();
+```
+
+PluginManager.loadPlugins()调用了ServerPluginsProvider的loadPlugins()
+
+```java
+@Override
+public void loadPlugins(Loader loader, ClassLoaderFactory createClassLoader)
+{
+    executeUntilFailure(
+            executor,
+            listFiles(installedPluginsDir).stream()
+                    .filter(File::isDirectory)
+                    .map(file -> (Callable<?>) () -> {
+                        loader.load(file.getAbsolutePath(), () ->
+                                createClassLoader.create(file.getName(), buildClassPath(file)));
+                        return null;
+                    })
+                    .collect(toImmutableList()));
+}
+```
+
+最终调用PluginManager.installPluginInternal()
+
+```java
+for (ConnectorFactory connectorFactory : plugin.getConnectorFactories()) {
+    log.info("Registering connector %s", connectorFactory.getName());
+    connectorManager.addConnectorFactory(connectorFactory, duplicatePluginClassLoaderFactory);
+}
+```
+
+ConnectorManager.addConnectorFactory()将connectorFactory存放到了connectorFactories中
+
+```java
+ConcurrentMap<String, InternalConnectorFactory> connectorFactories = new ConcurrentHashMap<>()
+
+...
+  
+InternalConnectorFactory existingConnectorFactory = connectorFactories.putIfAbsent(
+        connectorFactory.getName(),
+        new InternalConnectorFactory(connectorFactory, duplicatePluginClassLoaderFactory));
+```
+
+
+
+# Trino加载Catalog
+
+Trino启动时读取catalog配置目录中的catalog properties配置文件，依次加载创建各个catalog。
+
+```java
+injector.getInstance(StaticCatalogStore.class).loadCatalogs();
+```
+
+在StaticCatalogStore.loadCatalogs()调用了ConnectorManager.createCatalog()
+
+```java
+connectorManager.createCatalog(catalogName, connectorName, ImmutableMap.copyOf(properties));
+```
+
+在ConnectorManager.createCatalog()中创建Connector和catalog
+
+```java
+MaterializedConnector connector = new MaterializedConnector(
+        catalogName,
+        createConnector(catalogName, factory.getConnectorFactory(), duplicatePluginClassLoaderFactory, properties),
+        duplicatePluginClassLoaderFactory::destroy);
+
+
+Catalog catalog = new Catalog(
+                catalogName.getCatalogName(),
+                connector.getCatalogName(),
+                connectorName,
+                connector.getConnector(),
+                securityManagement,
+                informationSchemaConnector.getCatalogName(),
+                informationSchemaConnector.getConnector(),
+                systemConnector.getCatalogName(),
+                systemConnector.getConnector());
+
+
+addConnectorInternal(connector);
+catalogManager.registerCatalog(catalog);
+```
+
+在ConnectorManager.createConnector()中调用ConnectorFactory.create()创建了Connector
+
+```
+connectorFactory.create(catalogName.getCatalogName(), properties, context)
+```
+
