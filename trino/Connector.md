@@ -174,7 +174,89 @@ InternalConnectorFactory existingConnectorFactory = connectorFactories.putIfAbse
         new InternalConnectorFactory(connectorFactory, duplicatePluginClassLoaderFactory));
 ```
 
+加载注册插件
 
+```java
+private void installPluginInternal(Plugin plugin, Function<CatalogName, ClassLoader> duplicatePluginClassLoaderFactory)
+{
+    for (BlockEncoding blockEncoding : plugin.getBlockEncodings()) {
+        log.info("Registering block encoding %s", blockEncoding.getName());
+        blockEncodingManager.addBlockEncoding(blockEncoding);
+    }
+
+    for (Type type : plugin.getTypes()) {
+        log.info("Registering type %s", type.getTypeSignature());
+        typeRegistry.addType(type);
+    }
+
+    for (ParametricType parametricType : plugin.getParametricTypes()) {
+        log.info("Registering parametric type %s", parametricType.getName());
+        typeRegistry.addParametricType(parametricType);
+    }
+
+    for (ConnectorFactory connectorFactory : plugin.getConnectorFactories()) {
+        log.info("Registering connector %s", connectorFactory.getName());
+        connectorManager.addConnectorFactory(connectorFactory, duplicatePluginClassLoaderFactory);
+    }
+
+    Set<Class<?>> functions = plugin.getFunctions();
+    if (!functions.isEmpty()) {
+        log.info("Registering functions from %s", plugin.getClass().getSimpleName());
+        InternalFunctionBundleBuilder builder = InternalFunctionBundle.builder();
+        functions.forEach(builder::functions);
+        globalFunctionCatalog.addFunctions(builder.build());
+    }
+
+    for (SessionPropertyConfigurationManagerFactory sessionConfigFactory : plugin.getSessionPropertyConfigurationManagerFactories()) {
+        log.info("Registering session property configuration manager %s", sessionConfigFactory.getName());
+        sessionPropertyDefaults.addConfigurationManagerFactory(sessionConfigFactory);
+    }
+
+    for (ResourceGroupConfigurationManagerFactory configurationManagerFactory : plugin.getResourceGroupConfigurationManagerFactories()) {
+        log.info("Registering resource group configuration manager %s", configurationManagerFactory.getName());
+        resourceGroupManager.addConfigurationManagerFactory(configurationManagerFactory);
+    }
+
+    for (SystemAccessControlFactory accessControlFactory : plugin.getSystemAccessControlFactories()) {
+        log.info("Registering system access control %s", accessControlFactory.getName());
+        accessControlManager.addSystemAccessControlFactory(accessControlFactory);
+    }
+
+    passwordAuthenticatorManager.ifPresent(authenticationManager -> {
+        for (PasswordAuthenticatorFactory authenticatorFactory : plugin.getPasswordAuthenticatorFactories()) {
+            log.info("Registering password authenticator %s", authenticatorFactory.getName());
+            authenticationManager.addPasswordAuthenticatorFactory(authenticatorFactory);
+        }
+    });
+
+    for (CertificateAuthenticatorFactory authenticatorFactory : plugin.getCertificateAuthenticatorFactories()) {
+        log.info("Registering certificate authenticator %s", authenticatorFactory.getName());
+        certificateAuthenticatorManager.addCertificateAuthenticatorFactory(authenticatorFactory);
+    }
+
+    headerAuthenticatorManager.ifPresent(authenticationManager -> {
+        for (HeaderAuthenticatorFactory authenticatorFactory : plugin.getHeaderAuthenticatorFactories()) {
+            log.info("Registering header authenticator %s", authenticatorFactory.getName());
+            authenticationManager.addHeaderAuthenticatorFactory(authenticatorFactory);
+        }
+    });
+
+    for (EventListenerFactory eventListenerFactory : plugin.getEventListenerFactories()) {
+        log.info("Registering event listener %s", eventListenerFactory.getName());
+        eventListenerManager.addEventListenerFactory(eventListenerFactory);
+    }
+
+    for (GroupProviderFactory groupProviderFactory : plugin.getGroupProviderFactories()) {
+        log.info("Registering group provider %s", groupProviderFactory.getName());
+        groupProviderManager.addGroupProviderFactory(groupProviderFactory);
+    }
+
+    for (ExchangeManagerFactory exchangeManagerFactory : plugin.getExchangeManagerFactories()) {
+        log.info("Registering exchange manager %s", exchangeManagerFactory.getName());
+        exchangeManagerRegistry.addExchangeManagerFactory(exchangeManagerFactory);
+    }
+}
+```
 
 # Trino加载Catalog
 
@@ -221,3 +303,46 @@ catalogManager.registerCatalog(catalog);
 connectorFactory.create(catalogName.getCatalogName(), properties, context)
 ```
 
+注册连接器
+
+```java
+private synchronized void addConnectorInternal(MaterializedConnector connector)
+{
+    checkState(!stopped.get(), "ConnectorManager is stopped");
+    CatalogName catalogName = connector.getCatalogName();
+    checkState(!connectors.containsKey(catalogName), "Catalog '%s' already exists", catalogName);
+    connectors.put(catalogName, connector);
+
+    connector.getSplitManager()
+            .ifPresent(connectorSplitManager -> splitManager.addConnectorSplitManager(catalogName, connectorSplitManager));
+
+    connector.getPageSourceProvider()
+            .ifPresent(pageSourceProvider -> pageSourceManager.addConnectorPageSourceProvider(catalogName, pageSourceProvider));
+
+    connector.getPageSinkProvider()
+            .ifPresent(pageSinkProvider -> pageSinkManager.addConnectorPageSinkProvider(catalogName, pageSinkProvider));
+
+    connector.getIndexProvider()
+            .ifPresent(indexProvider -> indexManager.addIndexProvider(catalogName, indexProvider));
+
+    connector.getPartitioningProvider()
+            .ifPresent(partitioningProvider -> nodePartitioningManager.addPartitioningProvider(catalogName, partitioningProvider));
+
+    procedureRegistry.addProcedures(catalogName, connector.getProcedures());
+    Set<TableProcedureMetadata> tableProcedures = connector.getTableProcedures();
+    tableProceduresRegistry.addTableProcedures(catalogName, tableProcedures);
+
+    connector.getAccessControl()
+            .ifPresent(accessControl -> accessControlManager.addCatalogAccessControl(catalogName, accessControl));
+
+    tablePropertyManager.addProperties(catalogName, connector.getTableProperties());
+    materializedViewPropertyManager.addProperties(catalogName, connector.getMaterializedViewProperties());
+    columnPropertyManager.addProperties(catalogName, connector.getColumnProperties());
+    schemaPropertyManager.addProperties(catalogName, connector.getSchemaProperties());
+    analyzePropertyManager.addProperties(catalogName, connector.getAnalyzeProperties());
+    for (TableProcedureMetadata tableProcedure : tableProcedures) {
+        tableProceduresPropertyManager.addProperties(catalogName, tableProcedure.getName(), tableProcedure.getProperties());
+    }
+    sessionPropertyManager.addConnectorSessionProperties(catalogName, connector.getSessionProperties());
+}
+```
