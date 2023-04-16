@@ -21,8 +21,14 @@ end note
 StatementRewrite --> Analyzer : rewrittenStatement[Statement]
 
 Analyzer -> StatementAnalyzer : analyze(rewrittenStatement, Optional.empty())
-StatementAnalyzer -> Statement实现类 : accept()
-return scope[Scope]
+StatementAnalyzer -> StatementAnalyzer.Visitor : process(rewrittenStatement, Optional.empty())
+StatementAnalyzer.Visitor -> Statement实现类 : accept(visitor,Optional.empty())
+StatementAnalyzer.Visitor <- Statement实现类 : visitXxx()
+note right of StatementAnalyzer
+  调用Statement实现类对应的
+  visitXxx方法
+end note
+StatementAnalyzer <-- StatementAnalyzer.Visitor : scope[Scope]
 StatementAnalyzer -> StatementAnalyzer : 检查每个column的访问权限
 Analyzer --> SqlQueryExecution : analysis[Analysis]
 @enduml
@@ -41,6 +47,7 @@ LogicalPlanner -> LogicalPlanner : planStatement(analysis, analysis.getStatement
 LogicalPlanner -> PlanOptimizer : optimize()
 note right of LogicalPlanner
   依次调用优化器的optimize()方法
+  优化器的列表在 PlanOptimizers 中配置
 end note
 SqlQueryExecution <-- LogicalPlanner : plan[Plan]
 SqlQueryExecution -> PlanFragmenter : createSubPlans(plan) 分段
@@ -50,3 +57,15 @@ SqlQueryExecution -> SqlQueryScheduler : new SqlQueryScheduler()
 SqlQueryExecution -> SqlQueryScheduler : start()
 @enduml
 
+@startuml
+autonumber
+title 查询语句的执行计划
+LogicalPlanner -> LogicalPlanner : planStatement[Plan]
+LogicalPlanner -> LogicalPlanner : planStatementWithoutOutput()
+LogicalPlanner -> LogicalPlanner : createRelationPlan(analysis, (Query) statement)
+LogicalPlanner -> AstVisitor : process(query, null)
+AstVisitor -> Query : accept()
+Query -> RelationPlanner : visitQuery(query, null)
+RelationPlanner -> QueryPlanner : plan(query)
+RelationPlanner -> RelationPlanner : planQueryBody()
+@enduml

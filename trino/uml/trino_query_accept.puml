@@ -2,6 +2,10 @@
 title 调用/v1/statement 提交查询
 autonumber
 Client -> QueuedStatementResource: postStatement()
+note right of Client
+  当客户端向/v1/statement
+  发起POST请求时调用
+end note
 QueuedStatementResource -> QueuedStatementResource.Query: new Query()
 QueuedStatementResource -> QueuedStatementResource.Query: getQueryResults()
 QueuedStatementResource.Query -> QueuedStatementResource.Query: createQueryResults()
@@ -23,6 +27,10 @@ QueuedStatementResource --> Client: QueryResults
 title 调用/v1/statement/queued 获取查询状态
 autonumber
 Client -> QueuedStatementResource: getStatus()
+note right of Client
+  当客户端向/v1/statement/queued
+  发起GET请求时调用
+end note
 QueuedStatementResource -> QueuedStatementResource.Query: waitForDispatched()
 QueuedStatementResource.Query -> DispatchManager: createQuery(queryId, slug, \n sessionContext, query)
 DispatchManager -> DispatchManager: createQueryInternal(queryId, slug,\n sessionContext, query,\n resourceGroupManager)
