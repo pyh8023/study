@@ -1,0 +1,43 @@
+@startuml
+title PipelinedQueryScheduler查询调度
+autonumber
+-> PipelinedQueryScheduler:  <<create>>
+autonumber 1.2
+PipelinedQueryScheduler -> PipelinedQueryScheduler.CoordinatorStagesScheduler : create()
+participant PipelinedQueryScheduler.DistributedStagesScheduler
+autonumber 1.2.1
+PipelinedQueryScheduler.CoordinatorStagesScheduler -> PipelinedStageExecution : <<create>>
+note right of PipelinedQueryScheduler.CoordinatorStagesScheduler
+每个Coordinator_Only类型的Stage创建一个
+PipelinedStageExecution
+end note
+
+autonumber 2
+-> PipelinedQueryScheduler: start()
+autonumber 2.1
+PipelinedQueryScheduler -> PipelinedQueryScheduler.DistributedStagesScheduler : create()
+autonumber 2.1.1
+PipelinedQueryScheduler.DistributedStagesScheduler -> PipelinedStageExecution : <<create>>
+note right of PipelinedQueryScheduler.DistributedStagesScheduler
+Coordinator_Only类型之外的每个Stage创建一个
+PipelinedStageExecution
+end note
+PipelinedQueryScheduler.DistributedStagesScheduler -> StageScheduler : <<create>>
+
+autonumber 2.2
+PipelinedQueryScheduler -> PipelinedQueryScheduler.CoordinatorStagesScheduler : schedule()
+autonumber 2.2.1
+PipelinedQueryScheduler.CoordinatorStagesScheduler -> PipelinedStageExecution : scheduleTask()
+
+autonumber 2.3
+PipelinedQueryScheduler -> PipelinedQueryScheduler.DistributedStagesScheduler : schedule()
+autonumber 2.3.1
+PipelinedQueryScheduler.DistributedStagesScheduler -> StageScheduler : start()
+PipelinedQueryScheduler.DistributedStagesScheduler -> PipelinedStageExecution : beginScheduling()
+PipelinedQueryScheduler.DistributedStagesScheduler -> StageScheduler : schedule()
+autonumber 2.3.3.1
+StageScheduler -> PipelinedStageExecution : scheduleTask()
+autonumber 2.3.3.1.1
+PipelinedStageExecution -> HttpRemoteTask : <<create>>
+PipelinedStageExecution -> HttpRemoteTask : start()
+@enduml
