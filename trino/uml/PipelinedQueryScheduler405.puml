@@ -11,7 +11,6 @@ group 遍历执行计划分段SubPlan，每个分段执行下面内容
     StageManager -> SqlStage : createSqlStage()
     StageManager <-- SqlStage : sqlStage
     StageManager -> StageManager : stages.put(stageId, stage)
-    StageManager -> StageManager : stagesInTopologicalOrder.add(stage)
 
     alt stage是Coordinator_only类型
         StageManager -> StageManager : coordinatorStagesInTopologicalOrder.add(stage)
@@ -22,8 +21,7 @@ end
 
 StageManager -> StageManager : new()
 note right of StageManager
-    stages，stagesInTopologicalOrder，
-    coordinatorStagesInTopologicalOrder，
+    stages，coordinatorStagesInTopologicalOrder，
     distributedStagesInTopologicalOrder
     作为构造参数传入
 end note
@@ -33,7 +31,9 @@ StageManager --> PipelinedQueryScheduler : stageManager[StageManager]
 
 participant PipelinedQueryScheduler.CoordinatorStagesScheduler as CoordinatorStagesScheduler
 PipelinedQueryScheduler -> CoordinatorStagesScheduler : create()
-autonumber 1.2.1
+autonumber 1..1
+CoordinatorStagesScheduler -> CoordinatorStagesScheduler : createOutputBuffersForStagesConsumedByCoordinator()
+CoordinatorStagesScheduler -> CoordinatorStagesScheduler : createBucketToPartitionForStagesConsumedByCoordinator()
 CoordinatorStagesScheduler -> PipelinedStageExecution : createPipelinedStageExecution()
 note right of CoordinatorStagesScheduler
     遍历StageManager中的coordinatorStagesInTopologicalOrder,
@@ -46,11 +46,14 @@ note right of CoordinatorStagesScheduler
     stageExecutions作为构造参数传入
 end note
 CoordinatorStagesScheduler -> CoordinatorStagesScheduler : initialize()
+note right of CoordinatorStagesScheduler
+    为每个StageExecution设置状态变更监听器
+end note
 CoordinatorStagesScheduler --> PipelinedQueryScheduler :  coordinatorStagesScheduler
 @enduml
 
 @startuml
-title 查询调度执行
+title PipelinedQueryScheduler查询调度执行
 autonumber
  -> PipelinedQueryScheduler : start()
 autonumber 1.1
@@ -101,8 +104,6 @@ NodeScheduler -> NodeScheduler : selectCurrentNode()
 NodeScheduler --> CoordinatorStagesScheduler : coordinator[InternalNode]
  group 遍历所有PipelinedStageExecution，每个StageExecution创建一个RemoteTask
      CoordinatorStagesScheduler -> PipelinedStageExecution : scheduleTask(coordinator)
-     CoordinatorStagesScheduler <-- PipelinedStageExecution : task[Optional<RemoteTask>]
-     CoordinatorStagesScheduler -> PipelinedStageExecution : schedulingComplete()
  end
 
 autonumber 1.3
@@ -125,4 +126,47 @@ PipelinedStageExecution -> HttpRemoteTask : start()
 autonumber 1.8
 StageScheduler --> PipelinedStageExecution : result[ScheduleResult]
 DistributedStagesScheduler -> PipelinedStageExecution : schedulingComplete()
+@enduml
+
+
+@startuml
+title DistributedStagesScheduler构造方法执行
+participant PipelinedQueryScheduler.DistributedStagesScheduler as DistributedStagesScheduler
+autonumber
+DistributedStagesScheduler -> PipelinedStageExecution : createPipelinedStageExecution()
+note right of DistributedStagesScheduler
+    遍历StageManager中的distributedStagesInTopologicalOrder,
+    每个SqlStage创建一个PipelinedStageExecution
+end note
+DistributedStagesScheduler -> DistributedStagesScheduler : createStageScheduler()
+note right of DistributedStagesScheduler
+    前面创建的每个PipelinedStageExecution创建一个StageScheduler
+    StageScheduler有4个实现类：
+    SourcePartitionedScheduler
+    ScaledWriterScheduler
+    FixedCountScheduler
+    FixedSourcePartitionedScheduler
+end note
+autonumber 2.1
+DistributedStagesScheduler -> SplitSourceFactory : createSplitSources()
+return splitSources[Map<PlanNodeId, SplitSource>]
+alt stage为SOURCE_DISTRIBUTION类型
+    DistributedStagesScheduler -> SourcePartitionedScheduler : newSourcePartitionedSchedulerAsStageScheduler()
+    note right of DistributedStagesScheduler
+        创建一个包装了SourcePartitionedScheduler的StageScheduler匿名实现类
+    end note
+else stage为SCALED_WRITER_ROUND_ROBIN_DISTRIBUTION类型
+    DistributedStagesScheduler -> DistributedStagesScheduler : new ScaledWriterScheduler()
+else splitSources不为空
+    DistributedStagesScheduler -> DistributedStagesScheduler : new FixedCountScheduler()
+else
+    DistributedStagesScheduler -> DistributedStagesScheduler :  new FixedSourcePartitionedScheduler()
+end
+
+autonumber 3
+DistributedStagesScheduler -> DistributedStagesScheduler : new()
+DistributedStagesScheduler -> DistributedStagesScheduler : initialize()
+note right of DistributedStagesScheduler
+    为每个StageExecution设置状态变更监听器
+end note
 @enduml

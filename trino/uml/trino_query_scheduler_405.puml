@@ -33,11 +33,10 @@ autonumber 2.3
 PipelinedQueryScheduler -> PipelinedQueryScheduler.DistributedStagesScheduler : schedule()
 autonumber 2.3.1
 PipelinedQueryScheduler.DistributedStagesScheduler -> StageScheduler : start()
-PipelinedQueryScheduler.DistributedStagesScheduler -> PipelinedStageExecution : beginScheduling()
 PipelinedQueryScheduler.DistributedStagesScheduler -> StageScheduler : schedule()
-autonumber 2.3.3.1
+autonumber 2.3.2.1
 StageScheduler -> PipelinedStageExecution : scheduleTask()
-autonumber 2.3.3.1.1
+autonumber 2.3.2.1.1
 PipelinedStageExecution -> HttpRemoteTask : <<create>>
 PipelinedStageExecution -> HttpRemoteTask : start()
 @enduml
