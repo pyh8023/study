@@ -1,58 +1,58 @@
 @startuml
-title FaultTolerantQueryScheduler构造方法执行
+title EventDrivenFaultTolerantQueryScheduler构造方法执行
 autonumber
--> FaultTolerantQueryScheduler: new()
+-> EventDrivenFaultTolerantQueryScheduler: new()
 autonumber 1.1
-FaultTolerantQueryScheduler -> StageRegistry: new()
+EventDrivenFaultTolerantQueryScheduler -> StageRegistry: new()
 
 autonumber 2
--> FaultTolerantQueryScheduler: start()
+-> EventDrivenFaultTolerantQueryScheduler: start()
 autonumber 2.1
-FaultTolerantQueryScheduler -> FaultTolerantQueryScheduler.Scheduler : new()
+EventDrivenFaultTolerantQueryScheduler -> EventDrivenFaultTolerantQueryScheduler.Scheduler : new()
 autonumber 2.1.1
-FaultTolerantQueryScheduler.Scheduler -> FaultTolerantQueryScheduler.Scheduler : sortPlanInTopologicalOrder
+EventDrivenFaultTolerantQueryScheduler.Scheduler -> EventDrivenFaultTolerantQueryScheduler.Scheduler : sortPlanInTopologicalOrder
 autonumber 2.2
-FaultTolerantQueryScheduler -> FaultTolerantQueryScheduler.Scheduler : run()
+EventDrivenFaultTolerantQueryScheduler -> EventDrivenFaultTolerantQueryScheduler.Scheduler : run()
 autonumber 2.2.1
-FaultTolerantQueryScheduler.Scheduler -> FaultTolerantQueryScheduler.Scheduler : schedule()
+EventDrivenFaultTolerantQueryScheduler.Scheduler -> EventDrivenFaultTolerantQueryScheduler.Scheduler : schedule()
 autonumber 2.2.1.1
-FaultTolerantQueryScheduler.Scheduler -> FaultTolerantQueryScheduler.Scheduler : optimize()
-FaultTolerantQueryScheduler.Scheduler -> FaultTolerantQueryScheduler.Scheduler : updateStageExecutions()
+EventDrivenFaultTolerantQueryScheduler.Scheduler -> EventDrivenFaultTolerantQueryScheduler.Scheduler : optimize()
+EventDrivenFaultTolerantQueryScheduler.Scheduler -> EventDrivenFaultTolerantQueryScheduler.Scheduler : updateStageExecutions()
 autonumber 2.2.1.2.1
 group 遍历执行计划分段SubPlan，每个分段执行下面内容
-    FaultTolerantQueryScheduler.Scheduler -> FaultTolerantQueryScheduler.Scheduler : createStageExecution()
+    EventDrivenFaultTolerantQueryScheduler.Scheduler -> EventDrivenFaultTolerantQueryScheduler.Scheduler : createStageExecution()
     autonumber 2.2.1.2.1.1
-    FaultTolerantQueryScheduler.Scheduler -> SqlStage : createSqlStage()
-    FaultTolerantQueryScheduler.Scheduler <-- SqlStage : stage[SqlStage]
-    FaultTolerantQueryScheduler.Scheduler -> StageRegistry : add(stage)
-    FaultTolerantQueryScheduler.Scheduler -> EventDrivenTaskSourceFactory : create()
+    EventDrivenFaultTolerantQueryScheduler.Scheduler -> SqlStage : createSqlStage()
+    EventDrivenFaultTolerantQueryScheduler.Scheduler <-- SqlStage : stage[SqlStage]
+    EventDrivenFaultTolerantQueryScheduler.Scheduler -> StageRegistry : add(stage)
+    EventDrivenFaultTolerantQueryScheduler.Scheduler -> EventDrivenTaskSourceFactory : create()
     autonumber 2.2.1.2.1.4.1
     EventDrivenTaskSourceFactory -> SplitSourceFactory : createSplitSources()
     EventDrivenTaskSourceFactory -> EventDrivenTaskSourceFactory : createSplitAssigner()
     EventDrivenTaskSourceFactory -> EventDrivenTaskSource : new()
     autonumber 2.2.1.2.1.5
-    EventDrivenTaskSourceFactory --> FaultTolerantQueryScheduler.Scheduler : taskSource[EventDrivenTaskSource]
-    FaultTolerantQueryScheduler.Scheduler -> EventDrivenTaskSource : start()
-    FaultTolerantQueryScheduler.Scheduler -> ExchangeManager : createExchange()
-    FaultTolerantQueryScheduler.Scheduler <-- ExchangeManager : exchange[Exchange]
-    FaultTolerantQueryScheduler.Scheduler -> FaultTolerantQueryScheduler.StageExecution : new()
+    EventDrivenTaskSourceFactory --> EventDrivenFaultTolerantQueryScheduler.Scheduler : taskSource[EventDrivenTaskSource]
+    EventDrivenFaultTolerantQueryScheduler.Scheduler -> EventDrivenTaskSource : start()
+    EventDrivenFaultTolerantQueryScheduler.Scheduler -> ExchangeManager : createExchange()
+    EventDrivenFaultTolerantQueryScheduler.Scheduler <-- ExchangeManager : exchange[Exchange]
+    EventDrivenFaultTolerantQueryScheduler.Scheduler -> EventDrivenFaultTolerantQueryScheduler.StageExecution : new()
 end
 autonumber 2.2.1.3
-FaultTolerantQueryScheduler.Scheduler -> FaultTolerantQueryScheduler.Scheduler : scheduleTasks()
-FaultTolerantQueryScheduler.Scheduler -> FaultTolerantQueryScheduler.Scheduler : processNodeAcquisitions()
+EventDrivenFaultTolerantQueryScheduler.Scheduler -> EventDrivenFaultTolerantQueryScheduler.Scheduler : scheduleTasks()
+EventDrivenFaultTolerantQueryScheduler.Scheduler -> EventDrivenFaultTolerantQueryScheduler.Scheduler : processNodeAcquisitions()
 autonumber 2.2.1.4.1
-FaultTolerantQueryScheduler.Scheduler -> FaultTolerantQueryScheduler.StageExecution : schedule()
+EventDrivenFaultTolerantQueryScheduler.Scheduler -> EventDrivenFaultTolerantQueryScheduler.StageExecution : schedule()
 autonumber 2.2.1.4.1.1
-FaultTolerantQueryScheduler.Scheduler -> SqlStage : createTask()
+EventDrivenFaultTolerantQueryScheduler.Scheduler -> SqlStage : createTask()
 autonumber 2.2.1.4.1.1.1
 SqlStage -> HttpRemoteTask : new()
 autonumber 2.2.1.4.2
-FaultTolerantQueryScheduler.Scheduler <-- SqlStage : remoteTask[Optional<HttpRemoteTask>]
-FaultTolerantQueryScheduler.Scheduler -> HttpRemoteTask : start()
+EventDrivenFaultTolerantQueryScheduler.Scheduler <-- SqlStage : remoteTask[Optional<HttpRemoteTask>]
+EventDrivenFaultTolerantQueryScheduler.Scheduler -> HttpRemoteTask : start()
 autonumber 2.2.2
-FaultTolerantQueryScheduler.Scheduler -> FaultTolerantQueryScheduler.Scheduler : processEvents()
-FaultTolerantQueryScheduler.Scheduler -> FaultTolerantQueryScheduler.Scheduler : schedule()
-note right of FaultTolerantQueryScheduler.Scheduler
+EventDrivenFaultTolerantQueryScheduler.Scheduler -> EventDrivenFaultTolerantQueryScheduler.Scheduler : processEvents()
+EventDrivenFaultTolerantQueryScheduler.Scheduler -> EventDrivenFaultTolerantQueryScheduler.Scheduler : schedule()
+note right of EventDrivenFaultTolerantQueryScheduler.Scheduler
 processEvents()和schedule()循环调用，直到查询完成或者放弃
 end note
 @enduml
