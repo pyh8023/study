@@ -1,5 +1,5 @@
 @startuml
-title EventDrivenFaultTolerantQueryScheduler构造方法执行
+title EventDrivenFaultTolerantQueryScheduler查询调度
 autonumber
 -> EventDrivenFaultTolerantQueryScheduler: new()
 autonumber 1.1
